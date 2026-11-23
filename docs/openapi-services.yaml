@@ -1,0 +1,112 @@
+openapi: 3.0.3
+info:
+  title: LLM DLP Orchestrator — Internal Events API
+  version: 1.0.0
+  description: Контракт приёма событий от DNS-перехватчика (Команда 1) и Proxy/DLP.
+
+servers:
+  - url: http://orchestrator-api:8000/api/v1
+
+security:
+  - ServiceApiKey: []
+
+paths:
+  /events/dns:
+    post:
+      summary: Приём события DNS-запроса к LLM-домену
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DnsEventIn'
+      responses:
+        '202':
+          description: Событие принято в шину (окно 5 мин)
+        '401':
+          description: Неверный X-Service-API-Key
+
+  /events/proxy:
+    post:
+      summary: Приём события перехвата от Proxy/DLP (только маскированные ПДн)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProxyEventIn'
+      responses:
+        '202':
+          description: Событие принято в шину
+        '422':
+          description: Ошибка валидации (переданы немаскированные ПДн)
+
+components:
+  securitySchemes:
+    ServiceApiKey:
+      type: apiKey
+      in: header
+      name: X-Service-API-Key
+
+  schemas:
+    EntityType:
+      type: string
+      enum: [PERSON, PASSPORT, SNILS, INN, PHONE, EMAIL, ADDRESS, BANK_CARD, SECRET, NDA_MARKER, API_KEY]
+
+    PolicyAction:
+      type: string
+      enum: [ALLOW, WARN, MASK, PSEUDONYMIZE, BLOCK]
+
+    MaskedEntity:
+      type: object
+      required: [entity_type, masked_value, confidence]
+      properties:
+        entity_type:
+          $ref: '#/components/schemas/EntityType'
+        masked_value:
+          type: string
+          example: "45** ****89"
+        confidence:
+          type: number
+          format: float
+          example: 0.96
+
+    DnsEventIn:
+      type: object
+      required: [client_ip, domain, timestamp]
+      properties:
+        client_ip:
+          type: string
+          format: ipv4
+          example: "10.20.30.45"
+        domain:
+          type: string
+          example: "://openai.com"
+        timestamp:
+          type: string
+          format: date-time
+
+    ProxyEventIn:
+      type: object
+      required: [client_ip, domain, timestamp, action, entities]
+      properties:
+        client_ip:
+          type: string
+          format: ipv4
+          example: "10.20.30.45"
+        domain:
+          type: string
+          example: "://openai.com"
+        timestamp:
+          type: string
+          format: date-time
+        action:
+          $ref: '#/components/schemas/PolicyAction'
+        policy_name:
+          type: string
+        reason:
+          type: string
+        entities:
+          type: array
+          items:
+            $ref: '#/components/schemas/MaskedEntity'
