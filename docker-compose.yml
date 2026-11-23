@@ -1,0 +1,75 @@
+version: '3.9'
+
+services:
+  postgres-db:
+    image: postgres:16-alpine
+    container_name: postgres-db
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - internal_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  event-bus:
+    image: redis:7-alpine
+    container_name: event-bus
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    networks:
+      - internal_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  orchestrator-api:
+    build: .
+    container_name: orchestrator-api
+    restart: unless-stopped
+    env_file: .env
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      event-bus:
+        condition: service_healthy
+    networks:
+      - public_net
+      - internal_net
+
+  incident-worker:
+    build: .
+    container_name: incident-worker
+    restart: unless-stopped
+    env_file: .env
+    command: python -m app.worker.correlator
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+      event-bus:
+        condition: service_healthy
+    networks:
+      - internal_net
+
+volumes:
+  pg_data:
+
+networks:
+  public_net:
+    driver: bridge
+  internal_net:
+    driver: bridge
+    internal: true
