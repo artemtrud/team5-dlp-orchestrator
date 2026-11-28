@@ -1,32 +1,96 @@
 services:
-  redis:
-    image: redis:7-alpine
-    container_name: team5-redis
-    ports:
-      - "6379:6379"
-    restart: unless-stopped
-
-  postgres:
+  postgres-db:
     image: postgres:16-alpine
     container_name: team5-postgres
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres_password
-      POSTGRES_DB: incidents_db
+      POSTGRES_USER: ${POSTGRES_USER:-dlp_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-super_secret_pg_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-dlp_orchestrator}
     ports:
       - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d incidents_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dlp_user} -d ${POSTGRES_DB:-dlp_orchestrator}"]
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - internal_net
+
+  event-bus:
+    image: redis:7-alpine
+    container_name: event-bus
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - internal_net
 
   migrator:
     image: migrate/migrate
     container_name: team5-migrator
     volumes:
       - ./migrations:/migrations
-    command: ["-path", "/migrations", "-database", "postgres://postgres:postgres_password@postgres:5432/incidents_db?sslmode=disable", "up"]
+    command:
+      - "-path"
+      - "/migrations"
+      - "-database"
+      - "postgres://${POSTGRES_USER:-dlp_user}:${POSTGRES_PASSWORD:-super_secret_pg_pass}@postgres-db:5432/${POSTGRES_DB:-dlp_orchestrator}?sslmode=disable"
+      - "up"
     depends_on:
-      postgres:
+      postgres-db:
         condition: service_healthy
+    networks:
+      - internal_net
+    restart: "no"
+
+  orchestrator-api:
+    build: .
+    container_name: orchestrator-api
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - .:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+      event-bus:
+        condition: service_healthy
+    networks:
+      - public_net
+      - internal_net
+
+  incident-worker:
+    build: .
+    container_name: incident-worker
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - .:/app
+    command: python -m app.worker.correlator
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+      event-bus:
+        condition: service_healthy
+    networks:
+      - internal_net
+
+volumes:
+  pg_data:
+
+networks:
+  public_net:
+    driver: bridge
+  internal_net:
+    driver: bridge
+    internal: true

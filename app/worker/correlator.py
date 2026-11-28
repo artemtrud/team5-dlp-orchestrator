@@ -10,7 +10,7 @@ WINDOW_SECONDS = 300
 async def process_events():
     r = redis.from_url(REDIS_URL, decode_responses=True)
     last_id = "$"
-    print("[Worker] Запущен воркер корреляции (окно 5 мин)...")
+    print("[Worker] Р—Р°РїСѓС‰РµРЅ РІРѕСЂРєРµСЂ РєРѕСЂСЂРµР»СЏС†РёРё (РѕРєРЅРѕ 5 РјРёРЅ)...")
     while True:
         streams = await r.xread({"dlp_events_stream": last_id}, block=5000, count=10)
         for _, messages in streams:

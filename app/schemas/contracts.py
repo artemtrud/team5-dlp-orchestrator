@@ -31,7 +31,7 @@ class MaskedEntity(BaseModel):
     @classmethod
     def ensure_masked(cls, v: str) -> str:
         if "*" not in v and "#" not in v and "[MASKED]" not in v:
-            raise ValueError("Передано немаскированное значение ПДн! Разрешены только маскированные данные.")
+            raise ValueError("РџРµСЂРµРґР°РЅРѕ РЅРµРјР°СЃРєРёСЂРѕРІР°РЅРЅРѕРµ Р·РЅР°С‡РµРЅРёРµ РџР”РЅ! Р Р°Р·СЂРµС€РµРЅС‹ С‚РѕР»СЊРєРѕ РјР°СЃРєРёСЂРѕРІР°РЅРЅС‹Рµ РґР°РЅРЅС‹Рµ.")
         return v
 
 class DnsEventIn(BaseModel):
